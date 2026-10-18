@@ -16,10 +16,11 @@ import {
   searchEvents,
   updateEvent,
 } from "./calendar";
+import { ageMinutes, queueCreate, readCommands, readSnapshot } from "./reminders";
 import { normalizeConfiguredHostname, publicError } from "./security";
 import { isIanaTimeZone } from "./ical";
 
-type ToolEnv = Pick<Env, "ICLOUD_USERNAME" | "ICLOUD_APP_PASSWORD" | "CALENDAR_TIME_ZONE"> & Pick<Env, "MCP_HOSTNAME">;
+type ToolEnv = Pick<Env, "ICLOUD_USERNAME" | "ICLOUD_APP_PASSWORD" | "CALENDAR_TIME_ZONE"> & Pick<Env, "MCP_HOSTNAME" | "REMINDERS_KV">;
 
 const calendarSchema = z.object({
   id: z.string().describe("Opaque calendar ID to pass to event tools."),
@@ -411,6 +412,146 @@ export function createCalendarServer(env: ToolEnv, scopes: readonly string[] = [
       async ({ calendarId, eventId, etag, status }) => {
         try {
           return toolSuccess({ event: await respondToInvitation(credentials(env), { calendarId, eventId, etag }, status) });
+        } catch (error) {
+          return toolFailure(error);
+        }
+      },
+    );
+  }
+
+  // Reminders ride on the owner's iPhone: a Shortcut posts a snapshot and applies queued changes.
+  const prioritySchema = z.enum(["none", "low", "medium", "high"]);
+  const reminderSchema = z.object({
+    id: z.string().describe("Stable ID derived from list, title, and due date. Changes if any of those change."),
+    title: z.string(),
+    list: z.string(),
+    due: z.string().optional().describe("ISO 8601 instant when the reminder is due, if any."),
+    priority: prioritySchema,
+    flagged: z.boolean(),
+    completed: z.boolean(),
+    notes: z.string().optional(),
+  });
+  const remindersUnavailable = () =>
+    new Error("Reminders are not available: the iPhone sync Shortcut has not posted a snapshot yet. Ask the owner to run the Apple Reminders Sync shortcut once.");
+
+  if (granted.has("calendar:read")) {
+    server.registerTool(
+      "reminders_list",
+      {
+        title: "List Apple Reminders",
+        description:
+          "List the owner's open Apple Reminders from the latest iPhone snapshot. The snapshot is refreshed by an iOS Shortcut a few times a day and whenever the owner closes the Reminders app, so check syncedAt and ageMinutes before treating it as current. Reminders queued by reminders_create appear here only after the next sync.",
+        inputSchema: z.object({
+          list: z.string().max(200).optional().describe("Only reminders in this list (exact name)."),
+          query: z.string().max(200).optional().describe("Case-insensitive match on title or notes."),
+          dueBefore: z.string().optional().describe("ISO 8601 instant; only reminders due at or before this moment."),
+          dueAfter: z.string().optional().describe("ISO 8601 instant; only reminders due at or after this moment."),
+          includeUndated: z.boolean().optional().describe("Include reminders with no due date when a due filter is set. Default true."),
+          limit: z.number().int().min(1).max(500).optional().describe("Maximum reminders to return. Default 200."),
+        }).strict(),
+        outputSchema: z.object({
+          syncedAt: z.string(),
+          ageMinutes: z.number().int(),
+          lists: z.array(z.string()),
+          total: z.number().int(),
+          reminders: z.array(reminderSchema),
+          pendingChanges: z.number().int().describe("Changes queued for the iPhone that have not been applied yet."),
+        }),
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      },
+      async (input) => {
+        try {
+          if (!env.REMINDERS_KV) throw new Error("REMINDERS_KV is not bound on the Worker.");
+          const snapshot = await readSnapshot(env.REMINDERS_KV);
+          if (!snapshot) throw remindersUnavailable();
+          const query = input.query?.trim().toLowerCase();
+          const before = input.dueBefore ? new Date(input.dueBefore).getTime() : undefined;
+          const after = input.dueAfter ? new Date(input.dueAfter).getTime() : undefined;
+          const includeUndated = input.includeUndated ?? true;
+          const reminders = snapshot.items.filter((item) => {
+            if (input.list && item.list !== input.list) return false;
+            if (query && !item.title.toLowerCase().includes(query) && !(item.notes ?? "").toLowerCase().includes(query)) return false;
+            if (before !== undefined || after !== undefined) {
+              if (!item.due) return includeUndated;
+              const due = new Date(item.due).getTime();
+              if (before !== undefined && due > before) return false;
+              if (after !== undefined && due < after) return false;
+            }
+            return true;
+          });
+          const lists = [...new Set(snapshot.items.map((item) => item.list))].sort();
+          const pending = await readCommands(env.REMINDERS_KV);
+          return toolSuccess({
+            syncedAt: snapshot.syncedAt,
+            ageMinutes: ageMinutes(snapshot),
+            lists,
+            total: reminders.length,
+            reminders: reminders.slice(0, input.limit ?? 200),
+            pendingChanges: pending.length,
+          });
+        } catch (error) {
+          return toolFailure(error);
+        }
+      },
+    );
+
+    server.registerTool(
+      "reminders_pending_changes",
+      {
+        title: "Show reminders waiting for the iPhone",
+        description: "List reminder changes that have been queued but not yet applied by the owner's iPhone. Use this to avoid queuing duplicates.",
+        inputSchema: z.object({}).strict(),
+        outputSchema: z.object({
+          pending: z.array(z.object({
+            id: z.string(),
+            kind: z.literal("create"),
+            queuedAt: z.string(),
+            title: z.string(),
+            list: z.string().optional(),
+            due: z.string().optional(),
+            notes: z.string().optional(),
+            priority: prioritySchema.optional(),
+          })),
+        }),
+        annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      },
+      async () => {
+        try {
+          if (!env.REMINDERS_KV) throw new Error("REMINDERS_KV is not bound on the Worker.");
+          return toolSuccess({ pending: await readCommands(env.REMINDERS_KV) });
+        } catch (error) {
+          return toolFailure(error);
+        }
+      },
+    );
+  }
+
+  if (granted.has("calendar:write")) {
+    server.registerTool(
+      "reminders_create",
+      {
+        title: "Create an Apple Reminder",
+        description:
+          "Queue a new Apple Reminder. The owner's iPhone creates it on its next sync, usually within a few hours and immediately after the owner closes the Reminders app, so tell the owner it is queued rather than created. Check reminders_pending_changes first to avoid duplicates. Use reminders_list to learn the list names; an unknown list falls back to the default list.",
+        inputSchema: z.object({
+          title: z.string().min(1).max(1000),
+          list: z.string().max(200).optional().describe("Exact list name from reminders_list. Omit for the default list."),
+          due: z.string().optional().describe("ISO 8601 date-time for the reminder's alert, in the owner's time zone or with an offset."),
+          notes: z.string().max(20_000).optional(),
+          priority: prioritySchema.optional(),
+        }).strict(),
+        outputSchema: z.object({
+          queued: z.literal(true),
+          id: z.string(),
+          appliesOn: z.string(),
+        }),
+        annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      },
+      async (input) => {
+        try {
+          if (!env.REMINDERS_KV) throw new Error("REMINDERS_KV is not bound on the Worker.");
+          const command = await queueCreate(env.REMINDERS_KV, input);
+          return toolSuccess({ queued: true as const, id: command.id, appliesOn: "the iPhone's next Reminders sync" });
         } catch (error) {
           return toolFailure(error);
         }

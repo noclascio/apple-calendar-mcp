@@ -89,9 +89,9 @@ export function approvalPage(options: {
     ? `<div class="field"><label for="password">Approval password</label><input id="password" name="password" type="password" autocomplete="current-password" required${options.error ? " autofocus" : ""}></div>`
     : "";
   const error = options.error ? `<p class="error" role="alert">${escape(options.error)}</p>` : "";
-  const permissionTitle = options.writeRequested ? "Read and edit calendars and events" : "Read calendars and events";
+  const permissionTitle = options.writeRequested ? "Read and edit calendars, events, and reminders" : "Read calendars, events, and reminders";
   const permissionCopy = options.writeRequested
-    ? `${clientName} can create, change, delete, and respond to events. Invitations and responses may notify other people.`
+    ? `${clientName} can create, change, delete, and respond to events, and queue new reminders. Invitations and responses may notify other people.`
     : `${clientName} cannot create, edit, or delete anything.`;
   const content = `<main class="card"><h1 class="title">Share Apple Calendar with ${clientName}?</h1><p class="lede">Approve this connection to your iCloud calendars.</p><div class="permission"><div class="permission-title"><span class="permission-icon" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25"><path d="m5 12 4 4L19 6"/></svg></span>${permissionTitle}</div><p class="permission-copy">${permissionCopy}</p></div>${error}<form method="post" action="${escape(options.action)}">${password}<div class="actions"><button class="button button--primary" type="submit" name="decision" value="allow"><span class="button-label">Allow and return</span><span class="button-progress" aria-live="polite"><span class="spinner" aria-hidden="true"></span>Returning…</span></button><button class="button button--secondary" type="submit" name="decision" value="deny" formnovalidate>Cancel</button></div></form><p class="fine-print">You can revoke access later from ${clientName}.</p></main>`;
   return page({

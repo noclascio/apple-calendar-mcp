@@ -13,5 +13,5 @@
   "secrets": {
     "required": ["ICLOUD_USERNAME", "ICLOUD_APP_PASSWORD", "APPROVAL_PASSWORD"]
   },
-  "kv_namespaces": [{ "binding": "OAUTH_KV" }]
+  "kv_namespaces": [{ "binding": "OAUTH_KV" }, { "binding": "REMINDERS_KV" }]
 }

@@ -4,6 +4,7 @@ import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { defaultHandler } from "./authorize";
 import { createCalendarMcpHandler } from "./mcp";
+import { handleShortcut, isShortcutRoute } from "./shortcut";
 
 interface AuthProps {
   userId: string;
@@ -19,7 +20,7 @@ class McpApiHandler extends WorkerEntrypoint<Env, AuthProps> {
   }
 }
 
-export default new OAuthProvider<Env>({
+const oauthProvider = new OAuthProvider<Env>({
   apiRoute: "/mcp",
   apiHandler: McpApiHandler,
   defaultHandler,
@@ -42,3 +43,11 @@ export default new OAuthProvider<Env>({
     console.warn("oauth_provider_error", { code, internalCategory: internal?.category, status });
   },
 });
+
+// The iPhone Shortcut endpoint authenticates with its own bearer secret and never reaches OAuth.
+export default {
+  fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    if (isShortcutRoute(new URL(request.url))) return handleShortcut(request, env);
+    return oauthProvider.fetch(request, env, ctx);
+  },
+} satisfies ExportedHandler<Env>;

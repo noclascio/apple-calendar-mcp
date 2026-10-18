@@ -58,6 +58,8 @@ describe("MCP tool scopes", () => {
       "calendar_list_calendars",
       "calendar_list_events",
       "calendar_search_events",
+      "reminders_list",
+      "reminders_pending_changes",
     ]);
     expect(tools.every((tool) => tool.annotations?.readOnlyHint === true)).toBe(true);
   });
@@ -68,7 +70,8 @@ describe("MCP tool scopes", () => {
     const update = tools.find((tool) => tool.name === "calendar_update_event");
     const remove = tools.find((tool) => tool.name === "calendar_delete_event");
 
-    expect(tools).toHaveLength(11);
+    expect(tools).toHaveLength(14);
+    expect(tools.find((tool) => tool.name === "reminders_create")?.annotations).toMatchObject({ readOnlyHint: false, destructiveHint: false });
     expect(create?.outputSchema).toMatchObject({
       type: "object",
       properties: { event: { type: "object", properties: { attendees: { type: "array" }, timeZone: { type: "string" }, structuredLocation: { type: "object" }, etag: { type: "string" } } } },

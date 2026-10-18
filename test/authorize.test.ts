@@ -51,7 +51,7 @@ describe("approval page", () => {
   it("states the external effects of write access", async () => {
     const response = approvalPage({ action: "/authorize?request=1", clientName: "Claude", passwordRequired: false, writeRequested: true });
     const html = await response.text();
-    expect(html).toContain("Read and edit calendars and events");
+    expect(html).toContain("Read and edit calendars, events, and reminders");
     expect(html).toContain("Invitations and responses may notify other people.");
   });
 });
