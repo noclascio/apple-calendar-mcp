@@ -2,7 +2,7 @@
 
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { WorkerEntrypoint } from "cloudflare:workers";
-import { defaultHandler } from "./authorize";
+import { defaultHandler, secretsEqual } from "./authorize";
 import { createCalendarMcpHandler } from "./mcp";
 import { handleApi, isApiRoute } from "./api";
 import { handleShortcut, isShortcutRoute } from "./shortcut";
@@ -46,11 +46,27 @@ const oauthProvider = new OAuthProvider<Env>({
 });
 
 // The iPhone Shortcut endpoint and the plain HTTP API authenticate with their own bearer secrets and never reach OAuth.
+const FULL_SCOPES = ["calendar:read", "calendar:write"];
+const MIN_TOKEN_LENGTH = 24;
+
+// Clients that cannot complete OAuth may present API_TOKEN as a bearer token on /mcp instead.
+// A match grants both scopes; anything else falls through to the OAuth provider untouched.
+async function presentsApiToken(request: Request, env: Env): Promise<boolean> {
+  const configured = env.API_TOKEN;
+  if (!configured || configured.length < MIN_TOKEN_LENGTH) return false;
+  const match = /^Bearer\s+(\S+)$/i.exec(request.headers.get("authorization")?.trim() ?? "");
+  if (!match?.[1]) return false;
+  return secretsEqual(match[1], configured);
+}
+
 export default {
-  fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
     if (isShortcutRoute(url)) return handleShortcut(request, env);
     if (isApiRoute(url)) return handleApi(request, env);
+    if (url.pathname === "/mcp" && (await presentsApiToken(request, env))) {
+      return createCalendarMcpHandler(env, FULL_SCOPES)(request, env, ctx);
+    }
     return oauthProvider.fetch(request, env, ctx);
   },
 } satisfies ExportedHandler<Env>;
