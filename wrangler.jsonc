@@ -8,7 +8,7 @@
   "compatibility_date": "2026-08-27",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "vars": {
-    "CALENDAR_TIME_ZONE": "UTC"
+    "CALENDAR_TIME_ZONE": "America/New_York"
   },
   "secrets": {
     "required": ["ICLOUD_USERNAME", "ICLOUD_APP_PASSWORD", "APPROVAL_PASSWORD"]
