@@ -20,7 +20,7 @@ import { ageMinutes, queueCreate, readCommands, readSnapshot } from "./reminders
 import { normalizeConfiguredHostname, publicError } from "./security";
 import { isIanaTimeZone } from "./ical";
 
-type ToolEnv = Pick<Env, "ICLOUD_USERNAME" | "ICLOUD_APP_PASSWORD" | "CALENDAR_TIME_ZONE"> & Pick<Env, "MCP_HOSTNAME" | "REMINDERS_KV">;
+export type ToolEnv = Pick<Env, "ICLOUD_USERNAME" | "ICLOUD_APP_PASSWORD" | "CALENDAR_TIME_ZONE"> & Pick<Env, "MCP_HOSTNAME" | "REMINDERS_KV">;
 
 const calendarSchema = z.object({
   id: z.string().describe("Opaque calendar ID to pass to event tools."),
@@ -132,7 +132,7 @@ function requireOccurrenceId<T extends { updateScope: "entire_series" | "this_in
 
 const recurrenceSchema = z.array(z.string().min(1).max(500)).max(20);
 
-const eventDraftShape = {
+export const eventDraftShape = {
   title: z.string().min(1).max(500),
   start: z.string().min(1).describe("RFC3339 timestamp with an offset, or YYYY-MM-DD when allDay is true."),
   end: z.string().min(1).describe("RFC3339 timestamp with an offset, or the exclusive YYYY-MM-DD end date when allDay is true."),
@@ -166,7 +166,7 @@ const eventPatchSchema = z.object({
   url: z.url().nullable().optional().describe("Apple Calendar URL field; null clears it."),
 }).strict().refine((patch) => Object.values(patch).some((value) => value !== undefined), "Provide at least one event field to update.");
 
-function credentials(env: ToolEnv) {
+export function credentials(env: ToolEnv) {
   if (!env.ICLOUD_USERNAME || !env.ICLOUD_APP_PASSWORD) throw new Error("iCloud credentials are not configured.");
   if (!isIanaTimeZone(env.CALENDAR_TIME_ZONE)) throw new Error("CALENDAR_TIME_ZONE must be a valid IANA time zone.");
   return { username: env.ICLOUD_USERNAME, password: env.ICLOUD_APP_PASSWORD, defaultTimeZone: env.CALENDAR_TIME_ZONE };

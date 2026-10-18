@@ -8,6 +8,7 @@ interface Env {
   EXTERNAL_AUTHORIZATION?: string;
   APPROVAL_PASSWORD?: string;
   SHORTCUT_TOKEN?: string;
+  API_TOKEN?: string;
   ICLOUD_USERNAME: string;
   ICLOUD_APP_PASSWORD: string;
 }
