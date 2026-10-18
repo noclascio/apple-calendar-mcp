@@ -179,6 +179,21 @@ export const defaultHandler: ExportedHandler<AuthorizeEnv> = {
     });
     const redirect = new URL(redirectTo);
     console.info("oauth_authorization_approved", { clientName, redirectHost: redirect.host, redirectPath: redirect.pathname });
-    return Response.redirect(redirect, 303);
+    return returnPage(clientName, redirect);
   },
 };
+
+// Completes the approval with a script-driven navigation rather than a 303.
+// A form POST's redirect chain is subject to the page's form-action policy, so a client callback
+// that hops across hosts (for example www.cursor.com -> cursor.com) is blocked and the form spins.
+// Navigating from script is not subject to form-action, and the link is a fallback without script.
+export function returnPage(clientName: string, redirect: URL): Response {
+  const href = redirect.href;
+  const safeClient = escape(clientName);
+  const content = `<main class="card"><div class="message-icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25"><path d="m5 12 4 4L19 6"/></svg></div><h1 class="title">Connected</h1><p class="lede">Returning you to ${safeClient}.</p><p class="close-note">If nothing happens, <a href="${escape(href)}" rel="noreferrer">return to ${safeClient}</a>.</p></main>`;
+  return page({
+    content,
+    title: "Apple Calendar connected",
+    script: `location.replace(${JSON.stringify(href)})`,
+  });
+}
