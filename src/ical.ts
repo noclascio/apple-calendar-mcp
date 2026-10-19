@@ -224,6 +224,37 @@ function libraryTimeZoneComponent(timeZone: string): ICAL.Component | undefined 
   return timeZoneComponents(result[0])[0];
 }
 
+const ianaZoneCache = new Map<string, ICAL.Timezone>();
+
+function ianaTimezone(timeZone: string): ICAL.Timezone | undefined {
+  if (timeZone === "UTC") return ICAL.Timezone.utcTimezone;
+  const cached = ianaZoneCache.get(timeZone);
+  if (cached) return cached;
+  const source = libraryTimeZoneComponent(timeZone);
+  if (!source) return undefined;
+  const zone = new ICAL.Timezone({ component: source, tzid: timeZone });
+  ianaZoneCache.set(timeZone, zone);
+  return zone;
+}
+
+// ical.js reads a floating time, or a TZID whose VTIMEZONE is not embedded in the object, as if it
+// were UTC, which shifts a noon New York appointment to 07:00. Reinterpret such wall-clock values in
+// the property's IANA TZID when it has one, otherwise in the calendar's default zone.
+function resolveWallClock(time: ICAL.Time, property: ICAL.Property | null | undefined, context: ParseContext): ICAL.Time {
+  if (time.isDate) return time;
+  const zone = time.zone;
+  const tzid = zone?.tzid;
+  const resolved = Boolean(zone) && tzid !== "floating" && (tzid === "UTC" || tzid === "Z" || Boolean(zone.component));
+  if (resolved) return time;
+  const parameter = stringValue(property?.getFirstParameter("tzid"));
+  const target = isIanaTimeZone(parameter) ? parameter : context.defaultTimeZone;
+  const iana = isIanaTimeZone(target) ? ianaTimezone(target) : undefined;
+  if (!iana) return time;
+  const reinterpreted = time.clone();
+  reinterpreted.zone = iana;
+  return reinterpreted;
+}
+
 function formatLocalTime(value: ICAL.Time, timeZone: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone,
@@ -256,9 +287,11 @@ function eventTimeZone(component: ICAL.Component, context: ParseContext): string
   return isIanaTimeZone(context.defaultTimeZone) ? context.defaultTimeZone : undefined;
 }
 
-function parseTimeProperty(component: ICAL.Component, name: string): string | undefined {
-  const value = component.getFirstPropertyValue(name);
-  return value instanceof ICAL.Time ? formatTime(value) : undefined;
+function parseTimeProperty(component: ICAL.Component, name: string, context?: ParseContext): string | undefined {
+  const property = component.getFirstProperty(name);
+  const value = property?.getFirstValue();
+  if (!(value instanceof ICAL.Time)) return undefined;
+  return formatTime(context ? resolveWallClock(value, property, context) : value);
 }
 
 function parseAttendee(property: ICAL.Property, selfEmail: string): EventAttendee | undefined {
@@ -330,14 +363,16 @@ function parseStructuredLocation(component: ICAL.Component): StructuredLocation 
 
 function parseEventComponent(component: ICAL.Component, context: ParseContext): CalendarEvent {
   const event = new ICAL.Event(component);
-  const start = formatTime(event.startDate);
-  const end = formatTime(event.endDate);
-  const timeZone = event.startDate.isDate ? undefined : eventTimeZone(component, context);
+  const startDate = resolveWallClock(event.startDate, component.getFirstProperty("dtstart"), context);
+  const endDate = resolveWallClock(event.endDate, component.getFirstProperty("dtend") ?? component.getFirstProperty("dtstart"), context);
+  const start = formatTime(startDate);
+  const end = formatTime(endDate);
+  const timeZone = startDate.isDate ? undefined : eventTimeZone(component, context);
   const location = stringValue(component.getFirstPropertyValue("location"));
   const description = stringValue(component.getFirstPropertyValue("description"));
   const url = stringValue(component.getFirstPropertyValue("url"));
   const color = stringValue(component.getFirstPropertyValue("color"));
-  const recurrenceId = parseTimeProperty(component, "recurrence-id");
+  const recurrenceId = parseTimeProperty(component, "recurrence-id", context);
   const created = parseTimeProperty(component, "created");
   const updated = parseTimeProperty(component, "last-modified") ?? parseTimeProperty(component, "dtstamp");
   const sequenceValue = component.getFirstPropertyValue("sequence");
@@ -353,8 +388,8 @@ function parseEventComponent(component: ICAL.Component, context: ParseContext): 
     title: event.summary || "Untitled event",
     start,
     end,
-    ...(timeZone ? { timeZone, startLocal: formatLocalTime(event.startDate, timeZone), endLocal: formatLocalTime(event.endDate, timeZone) } : {}),
-    allDay: event.startDate.isDate,
+    ...(timeZone ? { timeZone, startLocal: formatLocalTime(startDate, timeZone), endLocal: formatLocalTime(endDate, timeZone) } : {}),
+    allDay: startDate.isDate,
     availability: transparency === "TRANSPARENT" ? "free" : "busy",
     status,
     attendees: component.getAllProperties("attendee").map((property) => parseAttendee(property, context.selfEmail)).filter((attendee): attendee is EventAttendee => Boolean(attendee)),

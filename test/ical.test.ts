@@ -410,3 +410,26 @@ END:VCALENDAR`;
     expect(typeof occurrence?.end).toBe("string");
   });
 });
+
+describe("wall-clock times without an embedded time zone", () => {
+  const context = { calendarId: "cal", eventId: "evt", selfEmail: "owner@example.com", defaultTimeZone: "America/New_York" };
+
+  it("interprets a TZID with no VTIMEZONE in the object using that zone", () => {
+    const data = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:a\r\nDTSTART;TZID=America/New_York:20261205T120000\r\nDTEND;TZID=America/New_York:20261205T130000\r\nSUMMARY:Noon\r\nEND:VEVENT\r\nEND:VCALENDAR";
+    const [event] = parseIcsEvents(data, context);
+    expect(event).toMatchObject({ start: "2026-12-05T17:00:00.000Z", end: "2026-12-05T18:00:00.000Z", startLocal: "2026-12-05T12:00:00-05:00", timeZone: "America/New_York" });
+  });
+
+  it("interprets a floating time in the calendar's default zone", () => {
+    const data = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:b\r\nDTSTART:20260705T120000\r\nDTEND:20260705T130000\r\nSUMMARY:Summer noon\r\nEND:VEVENT\r\nEND:VCALENDAR";
+    const [event] = parseIcsEvents(data, context);
+    expect(event).toMatchObject({ start: "2026-07-05T16:00:00.000Z", startLocal: "2026-07-05T12:00:00-04:00" });
+  });
+
+  it("leaves UTC and embedded-VTIMEZONE times untouched", () => {
+    const utc = "BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:c\r\nDTSTART:20261205T170000Z\r\nDTEND:20261205T180000Z\r\nSUMMARY:UTC noon\r\nEND:VEVENT\r\nEND:VCALENDAR";
+    expect(parseIcsEvents(utc, context)[0]?.start).toBe("2026-12-05T17:00:00.000Z");
+    const built = buildEventCalendar({ title: "Built", start: "2026-12-05T12:00:00-05:00", end: "2026-12-05T13:00:00-05:00", timeZone: "America/New_York" }, "owner@example.com", { uid: "d" }).data;
+    expect(parseIcsEvents(built, context)[0]?.start).toBe("2026-12-05T17:00:00.000Z");
+  });
+});
