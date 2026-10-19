@@ -158,7 +158,7 @@ export async function handleApi(request: Request, env: ApiEnv): Promise<Response
         if (!env.REMINDERS_KV) throw new Error("REMINDERS_KV is not bound on the Worker.");
         const parsed = createReminderSchema.safeParse(await readJson(request));
         if (!parsed.success) return invalid(parsed.error);
-        const command = await queueCreate(env.REMINDERS_KV, parsed.data);
+        const command = await queueCreate(env.REMINDERS_KV, parsed.data, new Date(), env.CALENDAR_TIME_ZONE);
         return json({ queued: true, id: command.id, appliesOn: "the iPhone's next Reminders sync" }, 202);
       }
 

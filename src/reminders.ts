@@ -58,12 +58,62 @@ function normalizeBoolean(value: string | undefined): boolean {
   return text === "yes" || text === "true" || text === "1";
 }
 
-function normalizeDue(value: string | undefined): string | undefined {
+const EXPLICIT_OFFSET = /(?:Z|[+-]\d{2}:?\d{2})$/i;
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_NO_OFFSET = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/;
+
+// Offset of `timeZone` from UTC, in minutes, at the given instant.
+function zoneOffsetMinutes(timeZone: string, at: number): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
+  }).formatToParts(new Date(at));
+  const get = (type: Intl.DateTimeFormatPartTypes) => Number(parts.find((part) => part.type === type)?.value ?? "0");
+  const asUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour"), get("minute"), get("second"));
+  return Math.round((asUtc - at) / 60_000);
+}
+
+// Interprets a wall-clock time (expressed as UTC fields) in `timeZone` and returns the real instant.
+function wallClockToInstant(wallClockAsUtc: number, timeZone: string): number {
+  let instant = wallClockAsUtc - zoneOffsetMinutes(timeZone, wallClockAsUtc) * 60_000;
+  instant = wallClockAsUtc - zoneOffsetMinutes(timeZone, instant) * 60_000;
+  return instant;
+}
+
+function validZone(timeZone: string | undefined): string {
+  if (!timeZone) return "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone }).format();
+    return timeZone;
+  } catch {
+    return "UTC";
+  }
+}
+
+// Normalizes a due date to an ISO instant. Accepts ISO with an offset, a plain date, and the text the
+// iOS Shortcuts app produces by default for a date, such as "Oct 20, 2026 at 2:00 PM"; text without an
+// offset is read as wall-clock time in `timeZone` (the calendar's default zone), never as UTC.
+export function normalizeDue(value: string | undefined, timeZone = "UTC"): string | undefined {
   const text = (value ?? "").trim();
   if (!text) return undefined;
-  const parsed = new Date(text);
-  if (Number.isNaN(parsed.getTime())) return text.slice(0, 64);
-  return parsed.toISOString();
+  const zone = validZone(timeZone);
+  if (DATE_ONLY.test(text)) {
+    return new Date(wallClockToInstant(Date.parse(`${text}T00:00:00Z`), zone)).toISOString();
+  }
+  if (EXPLICIT_OFFSET.test(text)) {
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? text.slice(0, 64) : parsed.toISOString();
+  }
+  if (ISO_NO_OFFSET.test(text)) {
+    return new Date(wallClockToInstant(Date.parse(`${text}Z`), zone)).toISOString();
+  }
+  const cleaned = text.replace(/\s+at\s+/i, " ").replace(/\u202f|\u00a0/g, " ");
+  let asUtc = Date.parse(`${cleaned} UTC`);
+  // The runtime's "local" zone is UTC, so a lenient parse without a zone also yields wall-clock-as-UTC.
+  if (Number.isNaN(asUtc)) asUtc = Date.parse(cleaned);
+  if (Number.isNaN(asUtc)) return text.slice(0, 64);
+  return new Date(wallClockToInstant(asUtc, zone)).toISOString();
 }
 
 async function stableId(parts: string[]): Promise<string> {
@@ -76,7 +126,7 @@ async function stableId(parts: string[]): Promise<string> {
 //   title ||| list ||| due ||| priority ||| flagged ||| notes [||| completed]
 // A line with fewer than two separators is treated as a continuation of the previous reminder's notes,
 // so multi-line notes survive without extra work in the Shortcut.
-export async function parseSnapshotPayload(payload: string): Promise<ReminderItem[]> {
+export async function parseSnapshotPayload(payload: string, timeZone = "UTC"): Promise<ReminderItem[]> {
   const items: ReminderItem[] = [];
   let pendingNotes: string[] = [];
   let current: Omit<ReminderItem, "id"> | undefined;
@@ -106,7 +156,7 @@ export async function parseSnapshotPayload(payload: string): Promise<ReminderIte
     await flush();
     const [title = "", list = "", due, priority, flagged, notes, completed] = fields.map((field) => field.trim());
     if (!title) continue;
-    const dueValue = normalizeDue(due);
+    const dueValue = normalizeDue(due, timeZone);
     current = {
       title: title.slice(0, 1000),
       list: (list || "Reminders").slice(0, 200),
@@ -155,12 +205,13 @@ export async function queueCreate(
   kv: KvLike,
   input: { title: string; list?: string | undefined; due?: string | undefined; notes?: string | undefined; priority?: ReminderItem["priority"] | undefined },
   now = new Date(),
+  timeZone = "UTC",
 ): Promise<CreateCommand> {
   const commands = await readCommands(kv);
   if (commands.length >= MAX_COMMANDS) {
     throw new Error("Too many reminder changes are waiting for the iPhone to sync. Open Reminders on the iPhone or run the sync Shortcut, then try again.");
   }
-  const due = input.due ? normalizeDue(input.due) : undefined;
+  const due = input.due ? normalizeDue(input.due, timeZone) : undefined;
   const command: CreateCommand = {
     id: crypto.randomUUID(),
     kind: "create",

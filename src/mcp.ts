@@ -550,7 +550,7 @@ export function createCalendarServer(env: ToolEnv, scopes: readonly string[] = [
       async (input) => {
         try {
           if (!env.REMINDERS_KV) throw new Error("REMINDERS_KV is not bound on the Worker.");
-          const command = await queueCreate(env.REMINDERS_KV, input);
+          const command = await queueCreate(env.REMINDERS_KV, input, new Date(), env.CALENDAR_TIME_ZONE);
           return toolSuccess({ queued: true as const, id: command.id, appliesOn: "the iPhone's next Reminders sync" });
         } catch (error) {
           return toolFailure(error);

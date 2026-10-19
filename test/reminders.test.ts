@@ -111,3 +111,27 @@ describe("shortcut endpoint", () => {
     expect((await handleShortcut(new Request("https://x.workers.dev/shortcut/other", { method: "POST", headers }), env(kv))).status).toBe(404);
   });
 });
+
+describe("due dates as the iPhone writes them", () => {
+  it("reads Shortcuts' default date text as wall-clock time in the calendar zone", async () => {
+    const line = ["Call dentist", "Personal", "Oct 20, 2026 at 2:00 PM", "None", "No", ""].join(SEP);
+    const [item] = await parseSnapshotPayload(line, "America/New_York");
+    expect(item?.due).toBe("2026-10-20T18:00:00.000Z");
+    const winter = ["Renew", "Admin", "Dec 5, 2026 at 12:00 PM", "None", "No", ""].join(SEP);
+    const [second] = await parseSnapshotPayload(winter, "America/New_York");
+    expect(second?.due).toBe("2026-12-05T17:00:00.000Z");
+  });
+
+  it("keeps explicit offsets and plain dates sensible", async () => {
+    const explicit = ["A", "L", "2026-10-20T14:00:00-04:00", "None", "No", ""].join(SEP);
+    expect((await parseSnapshotPayload(explicit, "America/New_York"))[0]?.due).toBe("2026-10-20T18:00:00.000Z");
+    const plain = ["B", "L", "2026-10-20", "None", "No", ""].join(SEP);
+    expect((await parseSnapshotPayload(plain, "America/New_York"))[0]?.due).toBe("2026-10-20T04:00:00.000Z");
+  });
+
+  it("queues agent-supplied due times without an offset in the calendar zone too", async () => {
+    const kv = memoryKv();
+    const command = await queueCreate(kv, { title: "Noon thing", due: "2026-12-05T12:00:00" }, new Date(), "America/New_York");
+    expect(command.due).toBe("2026-12-05T17:00:00.000Z");
+  });
+});

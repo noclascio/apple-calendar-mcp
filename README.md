@@ -6,6 +6,18 @@ Apple Calendar MCP runs headlessly in your own Cloudflare account. You don't nee
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/nweii/apple-calendar-mcp)
 
+## About this fork
+
+This fork (`noclascio/apple-calendar-mcp`) was set up over one evening to give six personal AI agents (OpenAI Dots, Grok Bot, Fo, Hark, Instinct, plus Muse natively) read and write access to one person's Apple Calendar and Reminders with no Google account and no always-on Mac. It adds, on top of the upstream project:
+
+- **Apple Reminders through the iPhone.** An iOS Shortcut posts open reminders to the Worker and creates reminders the agents queue. See [docs/reminders-shortcut.md](docs/reminders-shortcut.md), written step by step for iOS 27.
+- **A plain HTTP API** for assistants that cannot speak MCP. See [docs/http-api.md](docs/http-api.md).
+- **A fixed bearer token on the MCP endpoint** for clients that cannot finish OAuth.
+- **Per-client connection notes** for ChatGPT and Dots, Grok Bot, Fo, Hark and Instinct, including the traps. See [docs/connect-agents.md](docs/connect-agents.md).
+- **Three fixes found in live use:** the approval page's redirect was blocked by its own form-action policy for clients whose callback hops hosts (Grok Bot); long event searches failed with "Invalid time value" on some iCloud recurrence expansions; and events without an embedded time zone were read as UTC, shifting a noon appointment five hours. All fixed with tests.
+
+Secrets live only in Cloudflare. Nothing account-specific is in this repository.
+
 ## Features
 
 - **Remote calendar access from anywhere.** Connect compatible AI clients over HTTPS using a Cloudflare `workers.dev` address or your own custom domain.

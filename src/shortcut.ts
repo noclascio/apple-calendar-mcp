@@ -10,7 +10,7 @@
 import { secretsEqual } from "./authorize";
 import { drainCommands, parseSnapshotPayload, writeSnapshot } from "./reminders";
 
-type ShortcutEnv = Pick<Env, "REMINDERS_KV" | "SHORTCUT_TOKEN">;
+type ShortcutEnv = Pick<Env, "REMINDERS_KV" | "SHORTCUT_TOKEN"> & Partial<Pick<Env, "CALENDAR_TIME_ZONE">>;
 
 const MIN_TOKEN_LENGTH = 24;
 const MAX_BODY_BYTES = 4_000_000;
@@ -69,7 +69,7 @@ export async function handleShortcut(request: Request, env: ShortcutEnv): Promis
   if (length > MAX_BODY_BYTES) return new Response("Payload too large", { status: 413 });
 
   const payload = await readPayload(request);
-  const items = await parseSnapshotPayload(payload);
+  const items = await parseSnapshotPayload(payload, env.CALENDAR_TIME_ZONE ?? "UTC");
   const snapshot = await writeSnapshot(env.REMINDERS_KV, items);
   const commands = await drainCommands(env.REMINDERS_KV);
   console.info("shortcut_sync", { stored: items.length, commands: commands.length });

@@ -1,10 +1,12 @@
 # HTTP API for assistants without MCP
 
-Instinct, Fo, and anything else that can make web requests with a header can use this instead of MCP. It runs on the same Worker and is off until you set a token.
+Instinct, and anything else that can make web requests with a header but cannot speak MCP, can use this. (Fo and Hark turned out to support MCP directly; see connect-agents.md.) It runs on the same Worker and is off until you set a token.
 
 ## Enable it
 
-In Cloudflare, Worker, Settings, Runtime variables and secrets, Add variable. Key `API_TOKEN`, value a new random password of at least 24 characters, Secret checked, Add variable and deploy. Revoke access later by deleting or changing that secret.
+In Cloudflare, Worker, Settings, Runtime variables and secrets, Add variable. Key `API_TOKEN`, value a new random password of **at least 24 characters** (shorter is refused and the API reports itself disabled), Secret checked, Production checked, Add variable and deploy. Revoke access later by deleting or changing that secret.
+
+The same token also works as a bearer token on the MCP endpoint, for MCP clients that cannot complete OAuth.
 
 ## What to hand the assistant
 
