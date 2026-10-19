@@ -360,3 +360,53 @@ END:VCALENDAR`;
     }, "owner@example.com")).toThrow("complete RRULE");
   });
 });
+
+describe("iCloud expansion edge cases", () => {
+  it("keeps all-day occurrences as dates when iCloud emits a date-time RECURRENCE-ID", () => {
+    const source = buildEventCalendar({
+      title: "Rent due",
+      start: "2026-11-01",
+      end: "2026-11-02",
+      allDay: true,
+      recurrence: ["RRULE:FREQ=MONTHLY;COUNT=3"],
+    }, "owner@example.com", { uid: "all-day-series" }).data;
+    const expanded = `BEGIN:VCALENDAR\r
+VERSION:2.0\r
+BEGIN:VEVENT\r
+UID:all-day-series\r
+DTSTART;VALUE=DATE:20261201\r
+DTEND;VALUE=DATE:20261202\r
+RECURRENCE-ID:20261201T050000Z\r
+SUMMARY:Rent due\r
+END:VEVENT\r
+END:VCALENDAR`;
+    const context = { calendarId: "cal", eventId: "evt", selfEmail: "owner@example.com", defaultTimeZone: "America/New_York" };
+    const [occurrence] = parseExpandedIcsEvents(expanded, source, context, "America/New_York");
+    expect(occurrence).toMatchObject({ allDay: true, start: "2026-12-01", end: "2026-12-02" });
+  });
+
+  it("falls back to the occurrence's own end instead of throwing on unparseable durations", () => {
+    const source = buildEventCalendar({
+      title: "Odd series",
+      start: "2026-11-03T15:00:00-05:00",
+      end: "2026-11-03T15:30:00-05:00",
+      timeZone: "America/New_York",
+      recurrence: ["RRULE:FREQ=WEEKLY;COUNT=2"],
+    }, "owner@example.com", { uid: "odd-series" }).data;
+    const expanded = `BEGIN:VCALENDAR\r
+VERSION:2.0\r
+BEGIN:VEVENT\r
+UID:odd-series\r
+DTSTART;VALUE=DATE:20261110\r
+DTEND:20261110T203000Z\r
+RECURRENCE-ID:20261110T200000Z\r
+SUMMARY:Odd series\r
+END:VEVENT\r
+END:VCALENDAR`;
+    const context = { calendarId: "cal", eventId: "evt", selfEmail: "owner@example.com", defaultTimeZone: "America/New_York" };
+    expect(() => parseExpandedIcsEvents(expanded, source, context, "America/New_York")).not.toThrow();
+    const [occurrence] = parseExpandedIcsEvents(expanded, source, context, "America/New_York");
+    expect(typeof occurrence?.start).toBe("string");
+    expect(typeof occurrence?.end).toBe("string");
+  });
+});

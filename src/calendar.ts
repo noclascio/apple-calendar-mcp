@@ -180,21 +180,37 @@ async function fetchEventsForCalendar(
   const originalsByPath = new Map(originals.flatMap((object) => typeof object.data === "string"
     ? [[new URL(object.url).pathname, object.data] as const]
     : []));
-  return objects.flatMap((object) => {
-    const originalData = originalsByPath.get(new URL(object.url).pathname);
-    const recurringTimeZone = recurringEventTimeZoneId(originalData, defaultTimeZone);
-    if (typeof object.data !== "string") return [];
-    const context = {
-      calendarId,
-      eventId: encodeDavId(object.url),
-      selfEmail: username,
-      defaultTimeZone,
-      ...(object.etag ? { etag: object.etag } : {}),
-    };
-    return originalData && recurringTimeZone
-      ? parseExpandedIcsEvents(object.data, originalData, context, recurringTimeZone)
+  return objects.flatMap((object) => parseCalendarObjectSafely(object, {
+    calendarId,
+    username,
+    defaultTimeZone,
+    originalData: originalsByPath.get(new URL(object.url).pathname),
+  }));
+}
+
+// Parses one CalDAV object into events. A single malformed object must never fail a whole window,
+// so parse errors are logged by identifier only and the object is skipped.
+export function parseCalendarObjectSafely(
+  object: Pick<DAVCalendarObject, "url" | "data" | "etag">,
+  options: { calendarId: string; username: string; defaultTimeZone: string; originalData?: string | undefined },
+): CalendarEvent[] {
+  if (typeof object.data !== "string") return [];
+  const context = {
+    calendarId: options.calendarId,
+    eventId: encodeDavId(object.url),
+    selfEmail: options.username,
+    defaultTimeZone: options.defaultTimeZone,
+    ...(object.etag ? { etag: object.etag } : {}),
+  };
+  try {
+    const recurringTimeZone = recurringEventTimeZoneId(options.originalData, options.defaultTimeZone);
+    return options.originalData && recurringTimeZone
+      ? parseExpandedIcsEvents(object.data, options.originalData, context, recurringTimeZone)
       : parseIcsEvents(object.data, context);
-  });
+  } catch (error) {
+    console.warn("event_parse_skipped", { calendarId: options.calendarId, eventId: context.eventId, reason: publicError(error) });
+    return [];
+  }
 }
 
 async function loadEventObject(

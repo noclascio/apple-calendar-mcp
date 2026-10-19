@@ -379,13 +379,33 @@ export function parseIcsEvents(data: string, context: ParseContext): CalendarEve
   return root.getAllSubcomponents("vevent").map((component) => parseEventComponent(component, context));
 }
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+// Parses either a plain date or a timestamp to epoch milliseconds, or NaN when it is neither.
+function instantOf(value: string | undefined): number {
+  if (!value) return Number.NaN;
+  return new Date(DATE_ONLY.test(value) ? `${value}T00:00:00Z` : value).getTime();
+}
+
+// Derives an occurrence's end from the master's duration. iCloud's expansion occasionally mixes
+// date and date-time forms, so every step is guarded and the occurrence's own end is the fallback
+// rather than a thrown "Invalid time value".
 function expandedOccurrenceEnd(event: CalendarEvent, start: string): string {
-  if (event.allDay) {
-    const duration = new Date(`${event.end}T00:00:00Z`).getTime() - new Date(`${event.start}T00:00:00Z`).getTime();
-    return new Date(new Date(`${start}T00:00:00Z`).getTime() + duration).toISOString().slice(0, 10);
-  }
-  const duration = new Date(event.end).getTime() - new Date(event.start).getTime();
-  return new Date(new Date(start).getTime() + duration).toISOString();
+  const duration = instantOf(event.end) - instantOf(event.start);
+  const startInstant = instantOf(start);
+  if (!Number.isFinite(duration) || !Number.isFinite(startInstant)) return event.end;
+  const end = new Date(startInstant + duration);
+  return event.allDay ? end.toISOString().slice(0, 10) : end.toISOString();
+}
+
+// Picks the start for an expanded occurrence. The RECURRENCE-ID carries the true instant for timed
+// series (iCloud's expanded DTSTART can drift across DST), but an all-day series must keep a plain
+// date, so a date-time RECURRENCE-ID falls back to the occurrence's own DTSTART.
+function expandedOccurrenceStart(event: CalendarEvent, exception: CalendarEvent | undefined): string {
+  if (exception?.start) return exception.start;
+  const recurrenceId = event.recurrenceId ?? event.start;
+  if (event.allDay) return DATE_ONLY.test(recurrenceId) ? recurrenceId : event.start;
+  return Number.isFinite(instantOf(recurrenceId)) ? recurrenceId : event.start;
 }
 
 export function parseExpandedIcsEvents(data: string, sourceData: string, context: ParseContext, sourceTimeZone?: string): CalendarEvent[] {
@@ -396,7 +416,7 @@ export function parseExpandedIcsEvents(data: string, sourceData: string, context
   return expanded.map((event) => {
     if (!event.recurrenceId) return event;
     const exception = exceptions.get(event.recurrenceId);
-    const start = exception?.start ?? event.recurrenceId;
+    const start = expandedOccurrenceStart(event, exception);
     const end = exception?.end ?? expandedOccurrenceEnd(event, start);
     const timeZone = sourceTimeZone ?? exception?.timeZone ?? master?.timeZone ?? event.timeZone;
     return {
