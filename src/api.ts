@@ -4,7 +4,7 @@
 // until API_TOKEN is set. GET /api returns a machine-readable description of the routes.
 
 import { z } from "zod";
-import { secretsEqual } from "./authorize";
+import { presentedSecret, secretsEqual } from "./authorize";
 import { createEvent, getAccountProfile, getAvailability, listCalendars, searchEvents } from "./calendar";
 import { credentials, eventDraftShape, type ToolEnv } from "./mcp";
 import { ageMinutes, queueCreate, readCommands, readSnapshot } from "./reminders";
@@ -27,7 +27,7 @@ const createReminderSchema = z.object({
 
 export const API_SPEC = {
   name: "Apple Calendar and Reminders bridge",
-  auth: "Send the header `Authorization: Bearer <API_TOKEN>` on every request.",
+  auth: "Send the header `Authorization: Bearer <API_TOKEN>` on every request. HTTP Basic with any username and the token as the password is also accepted.",
   timeZoneNote: "Timed values are ISO 8601 with an explicit offset or Z. Responses use ISO 8601 instants.",
   routes: [
     { method: "GET", path: "/api/profile", description: "Account email, provider, and default IANA time zone." },
@@ -41,17 +41,10 @@ export const API_SPEC = {
   errors: "400 invalid input with `issues`, 401 bad token, 404 unknown route, 405 wrong method, 502 iCloud or sync error with `error`.",
 } as const;
 
-function bearer(request: Request): string | undefined {
-  const header = request.headers.get("authorization")?.trim();
-  if (!header) return undefined;
-  const match = /^Bearer\s+(\S+)$/i.exec(header);
-  return match?.[1];
-}
-
 async function authorized(request: Request, env: ApiEnv): Promise<boolean> {
   const configured = env.API_TOKEN;
   if (!configured || configured.length < MIN_TOKEN_LENGTH) return false;
-  const presented = bearer(request);
+  const presented = presentedSecret(request);
   if (!presented) return false;
   return secretsEqual(presented, configured);
 }

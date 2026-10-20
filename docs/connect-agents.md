@@ -47,6 +47,10 @@ Give Fo the `/mcp` address and say it uses OAuth. It connects, opens the approva
 
 Hark cannot complete an OAuth sign-in but accepts a fixed token. Give it the `/mcp` address and, through its secure form, the `API_TOKEN`. Same tools as everyone else.
 
+## Folk
+
+Folk stores credentials in its vault as a username and password pair and sends them as an HTTP Basic login. Open the secure link it gives you, enter any word as the username (for example `token`) and `API_TOKEN` as the password, and save. The Worker accepts the Basic form with any username when the password matches `API_TOKEN`.
+
 ## Instinct
 
 Instinct does not speak MCP but can call a web API with a header. Give it:

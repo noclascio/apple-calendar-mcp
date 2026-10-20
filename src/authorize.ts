@@ -39,6 +39,25 @@ export function authorizationGuard(env: Pick<AuthorizeEnv, "EXTERNAL_AUTHORIZATI
   return "disabled";
 }
 
+// Extracts a presented secret from an Authorization header. Accepts `Bearer <token>` and, for clients
+// that only speak username/password (Folk's vault, for example), `Basic base64(anything:<token>)`.
+export function presentedSecret(request: Request): string | undefined {
+  const header = request.headers.get("authorization")?.trim();
+  if (!header) return undefined;
+  const bearer = /^Bearer\s+(\S+)$/i.exec(header);
+  if (bearer?.[1]) return bearer[1];
+  const basic = /^Basic\s+([A-Za-z0-9+/=]+)$/i.exec(header);
+  if (!basic?.[1]) return undefined;
+  try {
+    const decoded = atob(basic[1]);
+    const separator = decoded.indexOf(":");
+    const password = separator >= 0 ? decoded.slice(separator + 1) : decoded;
+    return password || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function secretsEqual(candidate: string, expected: string): Promise<boolean> {
   const encoder = new TextEncoder();
   const [candidateDigest, expectedDigest] = await Promise.all([

@@ -42,3 +42,25 @@ describe("worker routing", () => {
     }
   });
 });
+
+describe("basic-auth form of the API token", () => {
+  it("accepts any username with the token as the password on /mcp", async () => {
+    const encoded = btoa(`token:${TOKEN}`);
+    const request = new Request("https://calendar.example.workers.dev/mcp", {
+      method: "POST",
+      headers: { authorization: `Basic ${encoded}`, "content-type": "application/json", accept: "application/json, text/event-stream", host: "calendar.example.workers.dev", origin: "https://calendar.example.workers.dev" },
+      body: initialize,
+    });
+    expect((await worker.fetch(request, env(TOKEN), ctx)).status).toBe(200);
+  });
+
+  it("rejects basic auth with the wrong password", async () => {
+    const encoded = btoa("token:wrong-password-that-is-also-long-enough");
+    const request = new Request("https://calendar.example.workers.dev/mcp", {
+      method: "POST",
+      headers: { authorization: `Basic ${encoded}`, "content-type": "application/json", accept: "application/json, text/event-stream", host: "calendar.example.workers.dev", origin: "https://calendar.example.workers.dev" },
+      body: initialize,
+    });
+    expect((await worker.fetch(request, env(TOKEN), ctx)).status).toBe(401);
+  });
+});

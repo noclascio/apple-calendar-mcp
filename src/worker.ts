@@ -2,7 +2,7 @@
 
 import OAuthProvider from "@cloudflare/workers-oauth-provider";
 import { WorkerEntrypoint } from "cloudflare:workers";
-import { defaultHandler, secretsEqual } from "./authorize";
+import { defaultHandler, presentedSecret, secretsEqual } from "./authorize";
 import { createCalendarMcpHandler } from "./mcp";
 import { handleApi, isApiRoute } from "./api";
 import { handleShortcut, isShortcutRoute } from "./shortcut";
@@ -49,14 +49,15 @@ const oauthProvider = new OAuthProvider<Env>({
 const FULL_SCOPES = ["calendar:read", "calendar:write"];
 const MIN_TOKEN_LENGTH = 24;
 
-// Clients that cannot complete OAuth may present API_TOKEN as a bearer token on /mcp instead.
+// Clients that cannot complete OAuth may present API_TOKEN on /mcp instead, as a bearer token or as the
+// password of a Basic login with any username.
 // A match grants both scopes; anything else falls through to the OAuth provider untouched.
 async function presentsApiToken(request: Request, env: Env): Promise<boolean> {
   const configured = env.API_TOKEN;
   if (!configured || configured.length < MIN_TOKEN_LENGTH) return false;
-  const match = /^Bearer\s+(\S+)$/i.exec(request.headers.get("authorization")?.trim() ?? "");
-  if (!match?.[1]) return false;
-  return secretsEqual(match[1], configured);
+  const presented = presentedSecret(request);
+  if (!presented) return false;
+  return secretsEqual(presented, configured);
 }
 
 export default {
