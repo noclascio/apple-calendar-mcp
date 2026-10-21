@@ -21,3 +21,13 @@ describe("parseCalendarObjectSafely", () => {
     expect(parseCalendarObjectSafely({ url, data: undefined as unknown as string }, options)).toEqual([]);
   });
 });
+
+describe("holdsEvents", () => {
+  it("keeps calendars with no declared component set, as iCloud shared calendars often are", async () => {
+    const { holdsEvents } = await import("../src/calendar");
+    expect(holdsEvents({ components: [] })).toBe(true);
+    expect(holdsEvents({ components: undefined as unknown as string[] })).toBe(true);
+    expect(holdsEvents({ components: ["VEVENT", "VTODO"] })).toBe(true);
+    expect(holdsEvents({ components: ["VTODO"] })).toBe(false);
+  });
+});

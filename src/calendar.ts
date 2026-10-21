@@ -105,7 +105,7 @@ function requireDiscoveredCalendar(calendars: DAVCalendar[], calendarId: string)
   const requestedUrl = decodeDavId(calendarId);
   const calendar = calendars.find((candidate) => new URL(candidate.url).href === requestedUrl);
   if (!calendar) throw new Error("Calendar identifier is no longer available.");
-  if (calendar.components && !calendar.components.includes("VEVENT")) throw new Error("This calendar does not contain events.");
+  if (!holdsEvents(calendar)) throw new Error("This calendar does not contain events.");
   return calendar;
 }
 
@@ -115,6 +115,13 @@ function requireEventUrl(calendar: DAVCalendar, eventId: string): string {
     throw new Error("Event does not belong to this calendar.");
   }
   return requestedUrl;
+}
+
+// A calendar holds events unless it explicitly declares a component set that excludes VEVENT.
+// iCloud omits the declaration on some shared calendars, and an empty list must not mean "nothing".
+export function holdsEvents(calendar: Pick<DAVCalendar, "components">): boolean {
+  const components = calendar.components ?? [];
+  return components.length === 0 || components.includes("VEVENT");
 }
 
 function requireTimeRange(start: string, end: string): { start: string; end: string } {
@@ -290,7 +297,7 @@ export async function searchEvents(
   const { client, calendars } = await getCalendars(credentials, baseFetch);
   const targets = options.calendarIds?.length
     ? options.calendarIds.map((calendarId) => ({ calendarId, calendar: requireDiscoveredCalendar(calendars, calendarId) }))
-    : calendars.filter((calendar) => !calendar.components || calendar.components.includes("VEVENT")).map((calendar) => ({ calendarId: encodeDavId(calendar.url), calendar }));
+    : calendars.filter(holdsEvents).map((calendar) => ({ calendarId: encodeDavId(calendar.url), calendar }));
   const eventGroups = await Promise.all(targets.map(({ calendar, calendarId }) => fetchEventsForCalendar(client, calendar, calendarId, credentials.username, credentials.defaultTimeZone, range)));
   const query = options.query?.trim().toLowerCase();
   const matches = eventGroups
