@@ -6,6 +6,7 @@ import { defaultHandler, presentedSecret, secretsEqual } from "./authorize";
 import { createCalendarMcpHandler } from "./mcp";
 import { handleApi, isApiRoute } from "./api";
 import { handleShortcut, isShortcutRoute } from "./shortcut";
+import { installChatGptMetadataFallback } from "./cimd";
 import { publicError } from "./security";
 
 interface AuthProps {
@@ -34,11 +35,9 @@ const oauthProvider = new OAuthProvider<Env>({
     scopes_supported: ["calendar:read", "calendar:write"],
     resource_name: "Apple Calendar",
   },
-  // CIMD is off on purpose. ChatGPT's client_id is https://chatgpt.com/oauth/client.json, which the
-  // Worker must download to recognise the client, and chatgpt.com refuses that download from Workers
-  // once the cached copy expires, killing every ChatGPT and Dots sign-in. With CIMD off, ChatGPT falls
-  // back to dynamic client registration, which needs nothing from chatgpt.com.
-  clientIdMetadataDocumentEnabled: false,
+  // ChatGPT insists on CIMD even when it is not advertised, so it stays on. chatgpt.com refuses the
+  // Worker's fetch of its metadata document, which src/cimd.ts works around with a pinned fallback.
+  clientIdMetadataDocumentEnabled: true,
   allowPlainPKCE: false,
   allowImplicitFlow: false,
   tokenExchangeCallback: ({ clientId, grantType }) => {
@@ -77,6 +76,7 @@ async function route(request: Request, env: Env, ctx: ExecutionContext): Promise
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    installChatGptMetadataFallback();
     try {
       return await route(request, env, ctx);
     } catch (error) {

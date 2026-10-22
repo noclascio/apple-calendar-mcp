@@ -24,7 +24,7 @@ Do this on **chatgpt.com in a browser**, not in the ChatGPT Mac app. The Mac app
 
 If a later Worker update adds tools and the old connector cannot be removed, add a second one named `Apple Calendar 2` with the same URL and tell the dot to use that.
 
-Note on registration: this fork keeps Client ID Metadata Documents (CIMD) switched off. ChatGPT's CIMD client id points at `https://chatgpt.com/oauth/client.json`, and chatgpt.com refuses the Worker's download of that file once the cached copy expires (seen 22 Oct 2026), which broke every ChatGPT and Dots sign-in with a Cloudflare 1101. With CIMD off, ChatGPT registers dynamically and needs nothing from chatgpt.com. If you upgrade from a build that had CIMD on, add the ChatGPT connector again once.
+Note on registration: ChatGPT identifies itself with a Client ID Metadata Document at `https://chatgpt.com/oauth/client.json`, and insists on it even when the server does not advertise support. The Worker must fetch that document to recognise the client, and chatgpt.com refuses the fetch from Cloudflare Workers once the provider's cached copy expires (seen 22 Oct 2026, every ChatGPT and Dots sign-in failed with a Cloudflare 1101). This fork works around it in `src/cimd.ts`: it retries the fetch with a browser User-Agent and, failing that, serves a pinned public-client copy of the document. Nothing else is intercepted.
 
 ## Grok Bot
 
