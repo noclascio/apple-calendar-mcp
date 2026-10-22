@@ -64,3 +64,18 @@ describe("basic-auth form of the API token", () => {
     expect((await worker.fetch(request, env(TOKEN), ctx)).status).toBe(401);
   });
 });
+
+describe("crash guard", () => {
+  it("turns an unhandled exception into a readable 500 instead of a Cloudflare 1101", async () => {
+    // A malformed multipart body makes formData() throw inside the Shortcut handler.
+    const request = new Request("https://calendar.example.workers.dev/shortcut/sync", {
+      method: "POST",
+      headers: { authorization: `Bearer ${"shortcut-token-that-is-long-enough-0123456789"}`, "content-type": "multipart/form-data; boundary=nope" },
+      body: "garbage",
+    });
+    const kv = { async get() { return null; }, async put() {} } as unknown as KVNamespace;
+    const response = await worker.fetch(request, { ...env(TOKEN), SHORTCUT_TOKEN: "shortcut-token-that-is-long-enough-0123456789", REMINDERS_KV: kv } as unknown as Env, ctx);
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({ error: expect.stringContaining("unexpected error") });
+  });
+});

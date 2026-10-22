@@ -6,6 +6,7 @@ import { defaultHandler, presentedSecret, secretsEqual } from "./authorize";
 import { createCalendarMcpHandler } from "./mcp";
 import { handleApi, isApiRoute } from "./api";
 import { handleShortcut, isShortcutRoute } from "./shortcut";
+import { publicError } from "./security";
 
 interface AuthProps {
   userId: string;
@@ -60,14 +61,25 @@ async function presentsApiToken(request: Request, env: Env): Promise<boolean> {
   return secretsEqual(presented, configured);
 }
 
+async function route(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const url = new URL(request.url);
+  if (isShortcutRoute(url)) return handleShortcut(request, env);
+  if (isApiRoute(url)) return handleApi(request, env);
+  if (url.pathname === "/mcp" && (await presentsApiToken(request, env))) {
+    return createCalendarMcpHandler(env, FULL_SCOPES)(request, env, ctx);
+  }
+  return oauthProvider.fetch(request, env, ctx);
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    const url = new URL(request.url);
-    if (isShortcutRoute(url)) return handleShortcut(request, env);
-    if (isApiRoute(url)) return handleApi(request, env);
-    if (url.pathname === "/mcp" && (await presentsApiToken(request, env))) {
-      return createCalendarMcpHandler(env, FULL_SCOPES)(request, env, ctx);
+    try {
+      return await route(request, env, ctx);
+    } catch (error) {
+      // Never surface Cloudflare's generic 1101 page: log the reason by path and return a readable error.
+      const reason = publicError(error);
+      console.error("unhandled_exception", { path: new URL(request.url).pathname, method: request.method, reason });
+      return Response.json({ error: "The calendar bridge hit an unexpected error.", reason }, { status: 500, headers: { "cache-control": "no-store" } });
     }
-    return oauthProvider.fetch(request, env, ctx);
   },
 } satisfies ExportedHandler<Env>;
