@@ -24,6 +24,8 @@ Do this on **chatgpt.com in a browser**, not in the ChatGPT Mac app. The Mac app
 
 If a later Worker update adds tools and the old connector cannot be removed, add a second one named `Apple Calendar 2` with the same URL and tell the dot to use that.
 
+Note on registration: this fork keeps Client ID Metadata Documents (CIMD) switched off. ChatGPT's CIMD client id points at `https://chatgpt.com/oauth/client.json`, and chatgpt.com refuses the Worker's download of that file once the cached copy expires (seen 22 Oct 2026), which broke every ChatGPT and Dots sign-in with a Cloudflare 1101. With CIMD off, ChatGPT registers dynamically and needs nothing from chatgpt.com. If you upgrade from a build that had CIMD on, add the ChatGPT connector again once.
+
 ## Grok Bot
 
 The connector page at grok.com/connectors feeds Grok chat only. Grok Bot keeps its own list, and the way in is to ask the bot in chat:

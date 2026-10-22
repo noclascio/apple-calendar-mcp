@@ -169,7 +169,14 @@ export const defaultHandler: ExportedHandler<AuthorizeEnv> = {
       throw error;
     }
 
-    const client = await env.OAUTH_PROVIDER.lookupClient(oauthRequest.clientId);
+    let client: Awaited<ReturnType<typeof env.OAUTH_PROVIDER.lookupClient>>;
+    try {
+      client = await env.OAUTH_PROVIDER.lookupClient(oauthRequest.clientId);
+    } catch (error) {
+      // A client whose metadata document cannot be fetched (CIMD) must not crash the Worker.
+      console.warn("oauth_client_lookup_failed", { reason: error instanceof Error ? error.message : String(error) });
+      return messagePage("Client could not be verified", "The requesting application's registration could not be checked. Remove the connector in that app and add it again.", 502, "client_lookup_failed");
+    }
     if (!client) return messagePage("Unknown client", "The requesting application is not registered with this calendar server.", 400, "unknown_oauth_client");
     const grantedScopes = supportedAuthorizationScopes(oauthRequest.scope);
     if (!grantedScopes.includes("calendar:read")) return messagePage("Permission unavailable", "This connection did not request the required calendar permission.", 400, "calendar_read_required");

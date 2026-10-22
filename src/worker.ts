@@ -34,7 +34,11 @@ const oauthProvider = new OAuthProvider<Env>({
     scopes_supported: ["calendar:read", "calendar:write"],
     resource_name: "Apple Calendar",
   },
-  clientIdMetadataDocumentEnabled: true,
+  // CIMD is off on purpose. ChatGPT's client_id is https://chatgpt.com/oauth/client.json, which the
+  // Worker must download to recognise the client, and chatgpt.com refuses that download from Workers
+  // once the cached copy expires, killing every ChatGPT and Dots sign-in. With CIMD off, ChatGPT falls
+  // back to dynamic client registration, which needs nothing from chatgpt.com.
+  clientIdMetadataDocumentEnabled: false,
   allowPlainPKCE: false,
   allowImplicitFlow: false,
   tokenExchangeCallback: ({ clientId, grantType }) => {
